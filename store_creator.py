@@ -1,11 +1,8 @@
-import tkinter as tk
-import tkinter.messagebox as messagebox
 import time
 import requests
 import random
 import logging
 import sys
-import threading
 
 # Game settings
 GAME_ID = 7406897155
@@ -19,120 +16,110 @@ MAX_RATE_LIMIT_DELAY = 48
 
 done_groups = []
 
-root = tk.Tk()
-root.title("Store Creator")
-root.geometry("400x300")
-
-def start_creating():
-  
-  num_stores, group_ids = validate_input()
-  
-  if num_stores and group_ids:
-    global stop_event
-    stop_event = threading.Event()
-    start_button.config(state="disabled")
-    stop_button.config(state="normal")
-    threading.Thread(target=create_stores, args=(num_stores, group_ids)).start()
-
-# Create GUI
-num_stores_label = tk.Label(root, text="Number of Stores:")
-num_stores_entry = tk.Entry(root)
-
-group_ids_label = tk.Label(root, text="Group IDs (separated by commas):")
-group_ids_entry = tk.Entry(root) 
-
-start_button = tk.Button(root, text="Start", command=start_creating)
-stop_button = tk.Button(root, text="Stop", command=stop_creating, state="disabled")
-
-# Layout GUI elements 
-num_stores_label.pack()
-num_stores_entry.pack()
-
-group_ids_label.pack()
-group_ids_entry.pack()
-
-start_button.pack(pady=20)
-stop_button.pack(pady=10)
-
-# Background gradient
-canvas = tk.Canvas(root, width=400, height=300)
-canvas.pack()
-
-for i in range(400):
-  canvas.create_line(0, i, 600, i, fill=f"#{i:02x}00ff")
-
-def validate_input():
-  # Validate input
-  num_stores = int(num_stores_entry.get())
-  group_ids = group_ids_entry.get()
-  
-  if not isinstance(num_stores, int) or num_stores < 1 or num_stores > NUM_STORES_LIMIT:
-    messagebox.showerror("Invalid input", "Number of stores must be between 1 and {}".format(NUM_STORES_LIMIT))
-    return  
-
-  try:
+def main():
+    group_ids = input("Enter group IDs (separated by commas): ")
     group_ids = [int(x) for x in group_ids.split(",")]
-  except ValueError:
-    messagebox.showerror("Invalid input", "Group IDs must be integers")
-    return
 
-  return num_stores, group_ids
+    num_stores = int(input("Enter number of stores to create: "))
+
+    if num_stores > len(group_ids):
+        num_stores = len(group_ids)
+
+    for i in range(num_stores):
+        group_id = group_ids[i]
+        if group_id in done_groups:
+            continue
+
+        player = get_player_for_group(group_id)
+
+        if not has_gamepass(player):
+            buy_gamepass(player)
+
+        claim_store(player)
+        create_store()
+
+        done_groups.append(group_id)
+
+        time.sleep(random.randint(MIN_RATE_LIMIT_DELAY, MAX_RATE_LIMIT_DELAY))
+
+def get_player_for_group(group_id):
+    response = requests.get(f"https://groups.roblox.com/v1/groups/{group_id}/roles")
+    roles = response.json()["roles"]
+    for role in roles:
+        if role["name"] == "Owner":
+            owner_id = role["user"]["id"]
+            break
+
+    response = requests.get(f"https://api.roblox.com/users/{owner_id}/username")
+    username = response.text
+
+    return username
+
+def has_gamepass(player):
+    response = requests.get(f"https://inventory.roblox.com/v1/users/{player}/items/GamePass/{GAME_PASS_ID}")
+    return response.json()["data"] != []
+
+def buy_gamepass(player):
+    response = requests.post(f"https://economy.roblox.com/v1/purchases/products/{GAME_PASS_ID}", json={"expectedCurrency":1}, cookies={"GuestData":""})
+    if response.status_code == 200:
+        logging.info(f"Bought gamepass for {player}")
+    else:
+        logging.error(f"Failed to buy gamepass for {player}")
 
 def claim_store(player):
+    response = requests.post(f"https://games.roblox.com/v1/games/{GAME_ID}/servers/Public?limit=100")
+    servers = response.json()["data"]
+    random.shuffle(servers)
+    for server in servers:
+        response = requests.get(f"https://games.roblox.com/v1/games/{GAME_ID}/servers/Public?serverIds={server['id']}")
+        server_data = response.json()["data"][0]
+        if server_data["maxPlayers"] == server_data["playing"] and server_data["reserved"] == 0:
+            continue
 
-  # Join game
-  response = requests.post("http://localhost:6463/game/join?placeId={}&playerName={}&spawnLocationName={}&spawnLocationType=CFrame".format(GAME_ID, player, SPAWN_LOCATION))
+        response = requests.post(f"https://games.roblox.com/v1/games/{GAME_ID}/servers/{server['id']}/join", json={"player":{"name":player}}, headers={"Referer":f"https://www.roblox.com/games/{GAME_ID}/"})
+        if response.status_code == 200:
+            logging.info(f"Joined server {server['id']} for {player}")
+            break
 
-  # Get player's character
-  character = None
-  while not character:
-    try:
-      character = requests.get("http://localhost:6463/game/getplayercharacter?playerName={}".format(player)).json()["character"] 
-    except:
-      time.sleep(1)
+    character = None
+    while not character:
+        try:
+            response = requests.get(f"https://users.roblox.com/v1/users/get-by-username?username={player}")
+            user_id = response.json()["id"]
+            response = requests.get(f"https://avatar.roblox.com/v1/users/{user_id}/currently-wearing")
+            character = response.json()["assetIds"]
+        except:
+            time.sleep(1)
 
-  # Find available store
-  store = None
-  while not store:
-    for obj in requests.get("http://localhost:6463/game/getallchildren?parentId={}&classname=Model&name=Store".format(character)).json():
-      store = obj["id"]
-      break
-      
-    if not store:
-      time.sleep(1)
+    store = None
+    while not store:
+        for obj in requests.get(f"https://avatar.roblox.com/v1/users/{user_id}/inventory/3?assetTypeId=41").json()["data"]:
+            if obj["name"].startswith("Store #"):
+                store = obj["id"]
+                break
 
-  # Press E to claim store
-  requests.post("http://localhost:6463/game/sendkey?playerName={}&keyCode=Enum.KeyCode.E&isKeyDown=true".format(player))
-  requests.post("http://localhost:6463/game/sendkey?playerName={}&keyCode=Enum.KeyCode.E&isKeyDown=false".format(player))
+        if not store:
+            time.sleep(1)
 
-  # Leave game
-  requests.post("http://localhost:6463/game/leavegame?playerName={}".format(player))
-  
-def create_stores(num_stores, group_ids):
+    response = requests.post(f"https://avatar.roblox.com/v1/avatar/set-wearing-assets", json={"assetIds":character + [store]}, headers={"Referer":f"https://www.roblox.com/games/{GAME_ID}/"})
+    if response.status_code == 200:
+        logging.info(f"Claimed store for {player}")
+    else:
+        logging.error(f"Failed to claim store for {player}")
 
-  for group_id in group_ids:
-  
-    if group_id in done_groups:
-      continue
-      
-    # Get player info
-    player = get_player_for_group(group_id)
-    
-    # Claim store
-    claim_store(player)
+    response = requests.post(f"https://games.roblox.com/v1/games/{GAME_ID}/servers/{server['id']}/leave", headers={"Referer":f"https://www.roblox.com/games/{GAME_ID}/"})
+    if response.status_code == 200:
+        logging.info(f"Left server {server['id']} for {player}")
+    else:
+        logging.error(f"Failed to leave server {server['id']} for {player}")
 
-    # Create store
-    create_store()
+def create_store():
+    response = requests.post(f"https://avatar.roblox.com/v1/groups/{GAME_PASS_ID}/store")
+    if response.status_code == 200:
+        logging.info("Created store")
+    else:
+        logging.error("Failed to create store")
 
-    done_groups.append(group_id)
-    
-    # Random rate limit delay
-    time.sleep(random.randint(MIN_RATE_LIMIT_DELAY, MAX_RATE_LIMIT_DELAY))
-    
-def stop_creating():
-  global stop_event
-  stop_event.set()
-  start_button.config(state="normal")
-  stop_button.config(state="disabled")
-
-root.mainloop()
+if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    main()
