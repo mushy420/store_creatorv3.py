@@ -23,6 +23,17 @@ root = tk.Tk()
 root.title("Store Creator")
 root.geometry("400x300")
 
+def start_creating():
+  
+  num_stores, group_ids = validate_input()
+  
+  if num_stores and group_ids:
+    global stop_event
+    stop_event = threading.Event()
+    start_button.config(state="disabled")
+    stop_button.config(state="normal")
+    threading.Thread(target=create_stores, args=(num_stores, group_ids)).start()
+
 # Create GUI
 num_stores_label = tk.Label(root, text="Number of Stores:")
 num_stores_entry = tk.Entry(root)
@@ -44,8 +55,11 @@ start_button.pack(pady=20)
 stop_button.pack(pady=10)
 
 # Background gradient
+canvas = tk.Canvas(root, width=400, height=300)
+canvas.pack()
+
 for i in range(400):
-  root.create_line(0, i, 600, i, fill=f"#{i:02x}00ff")
+  canvas.create_line(0, i, 600, i, fill=f"#{i:02x}00ff")
 
 def validate_input():
   # Validate input
@@ -111,24 +125,13 @@ def create_stores(num_stores, group_ids):
     claim_store(player)
 
     # Create store
-    ...
+    create_store()
 
     done_groups.append(group_id)
     
     # Random rate limit delay
     time.sleep(random.randint(MIN_RATE_LIMIT_DELAY, MAX_RATE_LIMIT_DELAY))
     
-def start_creating():
-  
-  num_stores, group_ids = validate_input()
-  
-  if num_stores and group_ids:
-    global stop_event
-    stop_event = threading.Event()
-    start_button.config(state="disabled")
-    stop_button.config(state="normal")
-    threading.Thread(target=create_stores, args=(num_stores, group_ids)).start()
-
 def stop_creating():
   global stop_event
   stop_event.set()
