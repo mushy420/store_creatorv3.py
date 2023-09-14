@@ -1,4 +1,4 @@
-## Stor_Creator VERSION 3
+## Stor_Creator VERSION 3 COMMAND PROMPT 
 
 Store Creator is a Python program that creates stores in a game using the Roblox API. The program allows you to specify the number of stores to create and the group IDs to use, and it automatically buys game passes, claims stores, and creates stores for each group ID.
 
