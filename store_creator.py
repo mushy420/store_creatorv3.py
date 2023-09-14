@@ -14,7 +14,8 @@ SPAWN_LOCATION = "SpawnLocation"
 
 # Configurable settings
 NUM_STORES_LIMIT = 50
-RATE_LIMIT_DELAY = 1
+MIN_RATE_LIMIT_DELAY = 3
+MAX_RATE_LIMIT_DELAY = 48
 
 done_groups = []
 
@@ -113,6 +114,9 @@ def create_stores(num_stores, group_ids):
     ...
 
     done_groups.append(group_id)
+    
+    # Random rate limit delay
+    time.sleep(random.randint(MIN_RATE_LIMIT_DELAY, MAX_RATE_LIMIT_DELAY))
     
 def start_creating():
   
