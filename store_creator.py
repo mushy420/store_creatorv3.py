@@ -117,9 +117,6 @@ def create_stores(num_stores, group_ids):
       
     # Get player info
     player = get_player_for_group(group_id)
-
-    # Buy game pass
-    buy_gamepass(player) 
     
     # Claim store
     claim_store(player)
